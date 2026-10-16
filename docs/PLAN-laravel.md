@@ -247,7 +247,7 @@ Panel at `/admin`, gate: `is_admin`. Create the first admin with an artisan comm
 ## 6. Deployment
 
 The owner already runs Laravel apps on a Hetzner VPS (Ubuntu 24.04, nginx, PHP-FPM, Certbot, MySQL),
-deployed by GitHub Actions over SSH running `deploy.sh` on push to `main`. Follow the same pattern.
+deployed by GitHub Actions over SSH running `deploy.sh` on push to `master`. Follow the same pattern.
 **Ask the owner** for: domain/subdomain, app path, PHP version, DB name/user, whether a queue worker
 exists, and the SSH secret names. Do not touch other apps' nginx files or databases.
 
