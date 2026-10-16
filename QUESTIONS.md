@@ -94,3 +94,24 @@ with. Change any of them and I'll adjust.
     checks the payload's top-level shape (`format`, `version`, arrays), not each shot inside it.
     ⚠️ nginx (`client_max_body_size`, default 1 MB) and PHP (`post_max_size`) must allow pushes of
     that size; set e.g. `client_max_body_size 20m` on the vhost (phase 6).
+
+## Admin / Filament (phase 5)
+
+30. **Filament v5.10.2** (latest; supports Laravel 13). ⚠️ It requires the PHP extension **`intl`**
+    (and `zip`, `dom`, `xmlreader`, `fileinfo` through its export dependencies). If `php8.4-intl`
+    is not installed on the VPS, `composer install` in `scripts/deploy.sh` will **fail** on the
+    next deploy. Run `apt install php8.4-intl php8.4-zip php8.4-xml` before pushing.
+31. **What "shots count" means:** users list/view and the white:black ratio count shots on the
+    heart now (`deleted_at` and `undone_at` both null). "Shots per day" counts every recorded shot
+    by `shot_at` (device time, UTC), including ones later undone/deleted, so it measures activity.
+32. **Active users** = distinct users with a device whose `last_seen_at` is within 7/30 days (set on
+    login, refresh, push, pull).
+33. **The admin panel shows the user's `name` and email.** The plan only forbids notes, category
+    names and payloads. Remove `name` from the view page if you want it hidden too.
+34. **Admins can't demote or delete themselves** from the panel (prevents locking yourself out).
+35. **`app:make-admin {email}`** promotes an existing account, or creates a verified one. It asks
+    for a password interactively, or prints a generated one with `--no-interaction`. A
+    Google-only account has no password, so it can't log in to `/admin` until it sets one
+    through "forgot password".
+36. Filament logs in through the `web` session guard (the `users` table), separate from the API's
+    JWT guard.

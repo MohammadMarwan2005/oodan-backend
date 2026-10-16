@@ -9,8 +9,8 @@ use App\Models\User;
  */
 class DeleteUser
 {
-    public function handle(User $user): void
+    public function handle(User $user): bool
     {
-        $user->delete();
+        return (bool) $user->delete();
     }
 }

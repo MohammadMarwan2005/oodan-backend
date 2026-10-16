@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Database\Factories\UserFactory;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,10 +14,18 @@ use Illuminate\Notifications\Notifiable;
 
 #[Fillable(['name', 'email', 'password', 'google_sub', 'email_verified_at'])]
 #[Hidden(['password', 'remember_token', 'google_sub'])]
-class User extends Authenticatable
+class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'sync_seq' => 0,
+        'is_admin' => false,
+    ];
 
     /**
      * Get the attributes that should be cast.
@@ -30,6 +40,14 @@ class User extends Authenticatable
             'sync_seq' => 'integer',
             'is_admin' => 'boolean',
         ];
+    }
+
+    /**
+     * Only admins can open the Filament panel.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return (bool) $this->is_admin;
     }
 
     public function hasVerifiedEmail(): bool

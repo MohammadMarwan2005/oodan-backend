@@ -16,14 +16,18 @@ abstract class TestCase extends BaseTestCase
     protected bool $validateContract = true;
 
     /**
-     * The JWT guard caches its user, and the application is shared between the requests of a
-     * test, so forget it to make every request authenticate from its own headers.
+     * The application is shared between the requests of a test, so undo per-request auth state:
+     * the JWT guard caches its user, and `auth:api` switches the default guard to `api`.
      */
     public function call($method, $uri, $parameters = [], $cookies = [], $files = [], $server = [], $content = null)
     {
         $this->app['auth']->guard('api')->forgetUser();
 
-        return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);
+        try {
+            return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);
+        } finally {
+            $this->app['auth']->shouldUse('web');
+        }
     }
 
     /**

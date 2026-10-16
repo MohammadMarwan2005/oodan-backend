@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -37,6 +38,16 @@ class Shot extends Model
             'meta_changed_at' => 'immutable_datetime',
             'seq' => 'integer',
         ];
+    }
+
+    /**
+     * Shots currently on the heart: neither deleted nor undone.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeLive(Builder $query): void
+    {
+        $query->whereNull('deleted_at')->whereNull('undone_at');
     }
 
     /**
