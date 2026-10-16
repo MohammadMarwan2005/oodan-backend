@@ -4,6 +4,7 @@ namespace App\Services\Sync;
 
 use App\Exceptions\ApiException;
 use App\Models\User;
+use App\Services\Sync\Mergers\BackupMerger;
 use App\Services\Sync\Mergers\CategoryMerger;
 use App\Services\Sync\Mergers\Merger;
 use App\Services\Sync\Mergers\SettingMerger;
@@ -28,6 +29,7 @@ class SyncPush
         'categories' => CategoryMerger::class,
         'shots' => ShotMerger::class,
         'settings' => SettingMerger::class,
+        'backups' => BackupMerger::class,
     ];
 
     /**

@@ -82,3 +82,15 @@ with. Change any of them and I'll adjust.
 26. **Extra indexes:** `shots (user_id, shot_at)` and `shots.created_at` for the admin stats;
     `devices.last_seen_at`. Shots have `timestamps(3)`; categories have no server timestamps, as
     in the plan.
+
+## Backups (phase 4)
+
+27. **Deleting a backup drops its payload** (`payload` set to null). The row and metadata stay so
+    the deletion syncs; `GET /backups/{id}` then returns 404. "Kept indefinitely" applies until
+    the user deletes the backup.
+28. **A backup pushed already deleted** (created and deleted offline before any sync) is accepted
+    without a payload.
+29. **Payload size cap: 10 MiB** of encoded JSON per backup (`payload_too_large`). The server only
+    checks the payload's top-level shape (`format`, `version`, arrays), not each shot inside it.
+    ⚠️ nginx (`client_max_body_size`, default 1 MB) and PHP (`post_max_size`) must allow pushes of
+    that size; set e.g. `client_max_body_size 20m` on the vhost (phase 6).

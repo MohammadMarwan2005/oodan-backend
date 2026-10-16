@@ -318,7 +318,7 @@ paths:
         `accepted` lists every processed item (applied, or ignored as duplicate/older).
         Rejection codes: `validation_failed` (see `fields`), `id_conflict` (the id belongs to another
         account), `category_not_found`, `category_kind_mismatch`, `shot_in_future` (`shot_at` more
-        than 24h ahead of server time), `unknown_setting`, `payload_required`.
+        than 24h ahead of server time), `unknown_setting`, `payload_required`, `payload_too_large`.
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: '#/components/parameters/DeviceId'
@@ -714,9 +714,10 @@ components:
     BackupPushItem:
       type: object
       description: |
-        A backup in a push. `payload` is required the first time the backup is pushed and ignored
-        afterwards. On an existing backup only `deleted_at` can change (once). The server drops the
-        payload when a backup is deleted.
+        A backup in a push. `payload` is required the first time the backup is pushed (unless it
+        is pushed already deleted) and ignored afterwards. On an existing backup only `deleted_at`
+        can change (once). The server drops the payload when a backup is deleted. The encoded
+        payload may be at most 10 MiB (`payload_too_large`).
       required: [id, reason, shots_count, created_at, deleted_at]
       properties:
         id: { $ref: '#/components/schemas/Uuid' }

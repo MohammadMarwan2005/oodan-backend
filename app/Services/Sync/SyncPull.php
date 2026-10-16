@@ -2,6 +2,7 @@
 
 namespace App\Services\Sync;
 
+use App\Models\Backup;
 use App\Models\Category;
 use App\Models\Shot;
 use App\Models\User;
@@ -23,6 +24,16 @@ class SyncPull
         'shots' => Shot::class,
         'categories' => Category::class,
         'settings' => UserSetting::class,
+        'backups' => Backup::class,
+    ];
+
+    /**
+     * Pulls carry backup metadata only; the payload is fetched with GET /backups/{id}.
+     *
+     * @var array<string, list<string>>
+     */
+    private const COLUMNS = [
+        'backups' => Backup::META_COLUMNS,
     ];
 
     /**
@@ -33,6 +44,7 @@ class SyncPull
         // Fetch limit + 1 per entity: if the merged rows exceed the limit, there is more to pull.
         $rows = collect(self::MODELS)
             ->flatMap(fn (string $model, string $key) => $model::query()
+                ->select(self::COLUMNS[$key] ?? ['*'])
                 ->where('user_id', $user->id)
                 ->where('seq', '>', $since)
                 ->orderBy('seq')

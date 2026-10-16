@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\EmailVerificationController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\PasswordResetController;
@@ -45,4 +46,8 @@ Route::middleware('auth:api')->group(function () {
 Route::middleware(['auth:api', 'verified.api', 'throttle:sync', 'device'])->group(function () {
     Route::post('sync/push', [SyncController::class, 'push']);
     Route::get('sync/pull', [SyncController::class, 'pull']);
+});
+
+Route::middleware(['auth:api', 'verified.api', 'throttle:sync'])->group(function () {
+    Route::get('backups/{id}', [BackupController::class, 'show'])->whereUuid('id');
 });

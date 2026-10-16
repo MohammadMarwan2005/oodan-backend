@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\BackupMetaResource;
 use App\Http\Resources\CategoryResource;
 use App\Http\Resources\SettingResource;
 use App\Http\Resources\ShotResource;
@@ -40,7 +41,7 @@ class SyncController extends Controller
             'shots' => ShotResource::collection($page['items']['shots']),
             'categories' => CategoryResource::collection($page['items']['categories']),
             'settings' => SettingResource::collection($page['items']['settings']),
-            'backups' => [],
+            'backups' => BackupMetaResource::collection($page['items']['backups']),
             'next_since' => $page['next_since'],
             'has_more' => $page['has_more'],
         ]);
