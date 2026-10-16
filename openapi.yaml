@@ -1,0 +1,835 @@
+openapi: 3.1.0
+info:
+  title: عوداً عوداً API
+  version: 1.0.0
+  description: |
+    Backend contract for the «عوداً عوداً» heart app. This file is the source of truth for every
+    client (Android, iOS, web). The server's API tests validate every response against it.
+
+    **Conventions**
+    - All routes live under `/api/v1`.
+    - Field names are `snake_case`.
+    - Wire timestamps are ISO-8601 UTC with milliseconds, e.g. `2026-10-16T20:00:00.000Z`.
+      The server also accepts other offsets and precisions on input and normalises them to UTC
+      milliseconds.
+    - Client-owned ids (shots, categories, backups, devices) are UUIDv7 generated on the device.
+    - Every request from an app sends `X-Device-Id`, `X-Platform` and `X-App-Version`. Endpoints
+      that issue tokens or sync data reject requests without a valid `X-Device-Id` / `X-Platform`
+      (`400 invalid_device_headers`).
+    - Every error uses the `Error` shape.
+
+    **Auth**: `Authorization: Bearer <access_token>`. Access tokens are JWTs that live 15 minutes.
+    Refresh tokens are opaque, live 60 days, are bound to one device and rotate on every use.
+    Reusing an already-rotated refresh token revokes every token of that user on that device.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Auth
+  - name: Account
+  - name: Sync
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: Create an account with email and password
+      description: The account starts unverified; a 6-digit verification code is emailed.
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Account created and signed in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthSession' }
+        '400': { $ref: '#/components/responses/InvalidDeviceHeaders' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Sign in with email and password
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthSession' }
+        '400': { $ref: '#/components/responses/InvalidDeviceHeaders' }
+        '401':
+          description: '`invalid_credentials` — wrong email or password (also for Google-only accounts).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/google:
+    post:
+      tags: [Auth]
+      operationId: googleLogin
+      summary: Sign in with a Google ID token
+      description: |
+        The client obtains a Google ID token and sends it here. The server verifies its signature
+        (Google JWKS), `iss`, `exp` and `aud`. It then signs in the account linked to that Google
+        user, links an existing account with the same email (only when Google reports
+        `email_verified = true`), or creates a new account.
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoogleLoginRequest' }
+      responses:
+        '200':
+          description: Signed in to an existing account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthSession' }
+        '201':
+          description: A new account was created and signed in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthSession' }
+        '400': { $ref: '#/components/responses/InvalidDeviceHeaders' }
+        '401':
+          description: '`invalid_google_token` — the token failed verification.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: |
+            `account_conflict` — an account with this email exists but Google does not report the
+            email as verified, so it cannot be linked.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshTokens
+      summary: Exchange a refresh token for a new token pair
+      description: |
+        The old refresh token is revoked. The refresh token must belong to the device in
+        `X-Device-Id`. Reusing a revoked token revokes every token of that user on that device.
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: New token pair.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '400': { $ref: '#/components/responses/InvalidDeviceHeaders' }
+        '401':
+          description: '`invalid_refresh_token` — unknown, expired, revoked or for another device.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke this device's refresh token
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Signed out. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /auth/email/send-code:
+    post:
+      tags: [Auth]
+      operationId: sendVerificationCode
+      summary: Email a new 6-digit verification code
+      description: Previous unused codes stop working. Does nothing if the email is already verified.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Code sent (or email already verified). }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/email/verify:
+    post:
+      tags: [Auth]
+      operationId: verifyEmail
+      summary: Verify the email with the 6-digit code
+      description: |
+        Codes expire after 15 minutes and allow 5 attempts. Errors: `invalid_code` (wrong, expired
+        or no code), `too_many_attempts` (request a new code).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyEmailRequest' }
+      responses:
+        '200':
+          description: Email verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/password/forgot:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Email a 6-digit password reset code
+      description: Always `204`, whether or not the account exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+      responses:
+        '204': { description: Accepted. }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/password/reset:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Set a new password with the emailed code
+      description: |
+        Revokes every refresh token of the account. Errors: `invalid_code` (wrong, expired, no code
+        or unknown email), `too_many_attempts`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '204': { description: Password changed. }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /me:
+    get:
+      tags: [Account]
+      operationId: getMe
+      summary: The signed-in user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    patch:
+      tags: [Account]
+      operationId: updateMe
+      summary: Update the profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMeRequest' }
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+    delete:
+      tags: [Account]
+      operationId: deleteMe
+      summary: Delete the account immediately
+      description: |
+        Confirm with the current `password`, or with a fresh Google `id_token` for the linked Google
+        account. Everything the account owns is deleted at once and cannot be recovered.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteMeRequest' }
+      responses:
+        '204': { description: Account deleted. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403':
+          description: '`invalid_confirmation` — the password or Google token did not confirm this account.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /sync/push:
+    post:
+      tags: [Sync]
+      operationId: syncPush
+      summary: Push local changes
+      description: |
+        Merge rules (last-write-wins by device time; ties keep the server value):
+
+        | Entity | New id | Existing id |
+        |---|---|---|
+        | shot | insert | immutable fields ignored; `(undone_at, deleted_at)` replaced if `state_changed_at` is newer; `(note, category_id)` replaced if `meta_changed_at` is newer |
+        | category | insert | all mutable fields replaced if `changed_at` is newer (`kind` is immutable) |
+        | setting | insert | replaced if `changed_at` is newer |
+        | backup | insert (`payload` required) | only `deleted_at` can change, once |
+
+        Categories are applied before shots, so a shot may reference a category from the same push.
+        Pushing the same item twice changes nothing. One invalid item rejects only that item.
+        At most 500 items across all arrays (`422 too_many_items`).
+
+        `accepted` lists every processed item (applied, or ignored as duplicate/older).
+        Rejection codes: `validation_failed` (see `fields`), `id_conflict` (the id belongs to another
+        account), `category_not_found`, `category_kind_mismatch`, `shot_in_future` (`shot_at` more
+        than 24h ahead of server time), `unknown_setting`, `payload_required`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushRequest' }
+      responses:
+        '200':
+          description: Push processed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PushResponse' }
+        '400': { $ref: '#/components/responses/InvalidDeviceHeaders' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/EmailNotVerified' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /sync/pull:
+    get:
+      tags: [Sync]
+      operationId: syncPull
+      summary: Pull changes since a sequence number
+      description: |
+        Returns every shot, category, setting and backup (metadata only) whose `seq > since`,
+        ordered by `seq`, at most `limit` items in total. Loop with `since = next_since` until
+        `has_more` is `false`. Deleted rows are returned too (with `deleted_at` set).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/AppVersion'
+        - name: since
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 500 }
+      responses:
+        '200':
+          description: A page of changes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PullResponse' }
+        '400': { $ref: '#/components/responses/InvalidDeviceHeaders' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/EmailNotVerified' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /backups/{id}:
+    get:
+      tags: [Sync]
+      operationId: getBackup
+      summary: A backup including its payload
+      description: Deleted backups return `404`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/Uuid' }
+      responses:
+        '200':
+          description: The backup.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Backup' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/EmailNotVerified' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      required: true
+      description: The device's stable id (UUID, generated once per install).
+      schema: { $ref: '#/components/schemas/Uuid' }
+    Platform:
+      name: X-Platform
+      in: header
+      required: true
+      schema: { type: string, enum: [android, ios, web] }
+    AppVersion:
+      name: X-App-Version
+      in: header
+      required: false
+      schema: { type: string, maxLength: 50 }
+
+  responses:
+    ValidationFailed:
+      description: |
+        `validation_failed` (with `fields`), or an endpoint-specific code such as `invalid_code`,
+        `too_many_attempts` or `too_many_items`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthenticated:
+      description: '`unauthenticated` — missing, invalid or expired access token.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    EmailNotVerified:
+      description: '`email_not_verified` — verify the email before syncing.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: '`not_found`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidDeviceHeaders:
+      description: '`invalid_device_headers` — `X-Device-Id` / `X-Platform` missing or invalid.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: '`too_many_requests` — rate limited; see `Retry-After`.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+    Timestamp:
+      description: ISO-8601 UTC with milliseconds.
+      type: string
+      format: date-time
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+      examples: ['2026-10-16T20:00:00.000Z']
+
+    NullableTimestamp:
+      description: ISO-8601 UTC with milliseconds, or `null`.
+      type: [string, 'null']
+      format: date-time
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+
+    Seq:
+      description: The user's sync sequence at the moment the row last changed on the server. Read-only.
+      type: integer
+      minimum: 1
+      readOnly: true
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code, e.g. `validation_failed`, `unauthenticated`.
+            message:
+              type: string
+              description: Human-readable English message, for logs only.
+            fields:
+              type: object
+              description: Validation messages per field (only for validation errors).
+              additionalProperties:
+                type: array
+                items: { type: string }
+
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, name, email, email_verified, has_password, google_linked, created_at]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        email_verified: { type: boolean }
+        has_password:
+          type: boolean
+          description: '`false` for Google-only accounts; they confirm deletion with a Google `id_token`.'
+        google_linked: { type: boolean }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+
+    TokenPair:
+      type: object
+      additionalProperties: false
+      required: [token_type, access_token, expires_in, refresh_token, refresh_expires_in]
+      properties:
+        token_type: { type: string, const: Bearer }
+        access_token: { type: string, description: JWT }
+        expires_in: { type: integer, description: Access token lifetime in seconds (900). }
+        refresh_token: { type: string, description: Opaque; store securely. }
+        refresh_expires_in: { type: integer, description: Refresh token lifetime in seconds (60 days). }
+
+    AuthSession:
+      type: object
+      additionalProperties: false
+      required: [tokens, user]
+      properties:
+        tokens: { $ref: '#/components/schemas/TokenPair' }
+        user: { $ref: '#/components/schemas/User' }
+
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        email: { type: string, format: email, maxLength: 255 }
+        password: { type: string, minLength: 8, maxLength: 255 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    GoogleLoginRequest:
+      type: object
+      required: [id_token]
+      properties:
+        id_token: { type: string }
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    VerifyEmailRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^\d{6}$' }
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    ResetPasswordRequest:
+      type: object
+      required: [email, code, password]
+      properties:
+        email: { type: string, format: email }
+        code: { type: string, pattern: '^\d{6}$' }
+        password: { type: string, minLength: 8, maxLength: 255 }
+
+    UpdateMeRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+
+    DeleteMeRequest:
+      type: object
+      description: Send `password` for accounts with a password, or `id_token` for the linked Google account.
+      properties:
+        password: { type: string }
+        id_token: { type: string }
+
+    Shot:
+      type: object
+      additionalProperties: false
+      required: [id, color, x, y, r, intensity, shot_at, undone_at, deleted_at, state_changed_at, note, category_id, meta_changed_at, device_id]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        color:
+          type: string
+          enum: [white, black]
+          description: Immutable.
+        x: { type: number, minimum: 0, maximum: 400, description: 'viewBox 400×460, 2 decimals. Immutable.' }
+        y: { type: number, minimum: 0, maximum: 460, description: 2 decimals. Immutable. }
+        r: { type: number, minimum: 3, maximum: 40, description: 2 decimals. Immutable. }
+        intensity: { type: integer, minimum: 10, maximum: 100, description: Immutable. }
+        shot_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: Device time; display order. Immutable.
+        undone_at:
+          $ref: '#/components/schemas/NullableTimestamp'
+          description: Set while the shot is undone (reversible).
+        deleted_at:
+          $ref: '#/components/schemas/NullableTimestamp'
+          description: Set by clear, truncated redo or replace-import; a restore can revive it.
+        state_changed_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: LWW clock for `undone_at` and `deleted_at`.
+        note: { type: [string, 'null'], maxLength: 500 }
+        category_id:
+          type: [string, 'null']
+          format: uuid
+          description: A category of this user whose `kind` equals `color`.
+        meta_changed_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: LWW clock for `note` and `category_id`.
+        device_id:
+          $ref: '#/components/schemas/Uuid'
+          description: Origin device; diagnostics only. Immutable.
+        seq: { $ref: '#/components/schemas/Seq' }
+
+    Category:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, color, icon, preset_key, sort, changed_at, deleted_at]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        kind:
+          type: string
+          enum: [white, black]
+          description: Immutable.
+        name: { type: string, minLength: 1, maxLength: 60 }
+        color: { type: [string, 'null'], pattern: '^#[0-9A-Fa-f]{6}$' }
+        icon: { type: [string, 'null'], maxLength: 40, description: Key from the clients' fixed icon set. }
+        preset_key:
+          type: [string, 'null']
+          maxLength: 40
+          description: Set for seeded defaults (e.g. `dhikr`) so clients can localise them.
+        sort: { type: integer }
+        changed_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: LWW clock for every mutable field including `deleted_at`.
+        deleted_at:
+          $ref: '#/components/schemas/NullableTimestamp'
+          description: Soft delete; shots keep pointing to the category.
+        seq: { $ref: '#/components/schemas/Seq' }
+
+    SettingKey:
+      type: string
+      enum: [dot_size, intensity, sound_enabled]
+
+    Setting:
+      type: object
+      additionalProperties: false
+      description: |
+        Value rules: `dot_size` integer 3–40, `intensity` integer 10–100, `sound_enabled` boolean.
+      required: [key, value, changed_at]
+      properties:
+        key: { $ref: '#/components/schemas/SettingKey' }
+        value: { type: [integer, boolean] }
+        changed_at: { $ref: '#/components/schemas/Timestamp' }
+        seq: { $ref: '#/components/schemas/Seq' }
+
+    BackupReason:
+      type: string
+      enum: [clear, import_replace, restore]
+
+    BackupMeta:
+      type: object
+      additionalProperties: false
+      required: [id, reason, shots_count, created_at, deleted_at]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        reason: { $ref: '#/components/schemas/BackupReason' }
+        shots_count: { type: integer, minimum: 0 }
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+          description: Device time.
+        deleted_at: { $ref: '#/components/schemas/NullableTimestamp' }
+        seq: { $ref: '#/components/schemas/Seq' }
+
+    Backup:
+      type: object
+      additionalProperties: false
+      required: [id, reason, shots_count, created_at, deleted_at, payload]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        reason: { $ref: '#/components/schemas/BackupReason' }
+        shots_count: { type: integer, minimum: 0 }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        deleted_at: { $ref: '#/components/schemas/NullableTimestamp' }
+        seq: { $ref: '#/components/schemas/Seq' }
+        payload: { $ref: '#/components/schemas/ExportFile' }
+
+    BackupPushItem:
+      type: object
+      description: |
+        A backup in a push. `payload` is required the first time the backup is pushed and ignored
+        afterwards. On an existing backup only `deleted_at` can change (once). The server drops the
+        payload when a backup is deleted.
+      required: [id, reason, shots_count, created_at, deleted_at]
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        reason: { $ref: '#/components/schemas/BackupReason' }
+        shots_count: { type: integer, minimum: 0 }
+        created_at: { $ref: '#/components/schemas/Timestamp' }
+        deleted_at: { $ref: '#/components/schemas/NullableTimestamp' }
+        payload: { $ref: '#/components/schemas/ExportFile' }
+
+    ExportFile:
+      type: object
+      description: Client-side export/import file; also the payload of a backup.
+      required: [format, version, exported_at, shots, categories, settings]
+      properties:
+        format: { type: string, const: oodan-export }
+        version: { type: integer, const: 1 }
+        exported_at: { $ref: '#/components/schemas/Timestamp' }
+        shots:
+          type: array
+          items: { $ref: '#/components/schemas/Shot' }
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/Category' }
+        settings:
+          type: object
+          properties:
+            dot_size: { type: integer, minimum: 3, maximum: 40 }
+            intensity: { type: integer, minimum: 10, maximum: 100 }
+            sound_enabled: { type: boolean }
+
+    PushRequest:
+      type: object
+      description: At most 500 items across all arrays. Every array is optional.
+      properties:
+        shots:
+          type: array
+          items: { $ref: '#/components/schemas/Shot' }
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/Category' }
+        settings:
+          type: array
+          items: { $ref: '#/components/schemas/Setting' }
+        backups:
+          type: array
+          items: { $ref: '#/components/schemas/BackupPushItem' }
+
+    RejectedItem:
+      type: object
+      additionalProperties: false
+      required: [entity, id, code]
+      properties:
+        entity: { type: string, enum: [shot, category, setting, backup] }
+        id:
+          type: string
+          description: The item's id (the `key` for settings). Empty if the item had no usable id.
+        code: { type: string }
+        fields:
+          type: object
+          description: Validation messages per field (for `validation_failed`).
+          additionalProperties:
+            type: array
+            items: { type: string }
+
+    PushResponse:
+      type: object
+      additionalProperties: false
+      required: [accepted, rejected, seq]
+      properties:
+        accepted:
+          type: object
+          additionalProperties: false
+          required: [shots, categories, settings, backups]
+          properties:
+            shots: { type: array, items: { $ref: '#/components/schemas/Uuid' } }
+            categories: { type: array, items: { $ref: '#/components/schemas/Uuid' } }
+            settings: { type: array, items: { $ref: '#/components/schemas/SettingKey' } }
+            backups: { type: array, items: { $ref: '#/components/schemas/Uuid' } }
+        rejected:
+          type: array
+          items: { $ref: '#/components/schemas/RejectedItem' }
+        seq:
+          type: integer
+          minimum: 0
+          description: The user's current sync sequence after this push.
+
+    PullResponse:
+      type: object
+      additionalProperties: false
+      required: [shots, categories, settings, backups, next_since, has_more]
+      properties:
+        shots:
+          type: array
+          items:
+            allOf: [{ $ref: '#/components/schemas/Shot' }]
+            required: [seq]
+        categories:
+          type: array
+          items:
+            allOf: [{ $ref: '#/components/schemas/Category' }]
+            required: [seq]
+        settings:
+          type: array
+          items:
+            allOf: [{ $ref: '#/components/schemas/Setting' }]
+            required: [seq]
+        backups:
+          type: array
+          items:
+            allOf: [{ $ref: '#/components/schemas/BackupMeta' }]
+            required: [seq]
+        next_since:
+          type: integer
+          minimum: 0
+          description: Pass as `since` in the next pull.
+        has_more: { type: boolean }
