@@ -17,6 +17,7 @@ log "assets…";     $PHP artisan storage:link || true
 # Filament arrives in a later phase; skip its assets until it is installed.
 if $PHP artisan list --raw | grep -q '^filament:assets'; then $PHP artisan filament:assets; fi
 log "optimize…";   $PHP artisan optimize
+log "queue restart…"; $PHP artisan queue:restart
 log "perms…";      chown -R www-data:www-data "$APP"; chmod -R ug+rwX "$APP/storage" "$APP/bootstrap/cache"
 log "reload fpm…"; systemctl reload php8.4-fpm
 
