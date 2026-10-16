@@ -45,12 +45,10 @@ class RefreshTokens
     }
 
     /**
-     * Exchange a refresh token for a new pair. Reusing a revoked token revokes every token of
-     * that user on that device.
-     *
-     * @return array{token_type: string, access_token: string, expires_in: int, refresh_token: string, refresh_expires_in: int}
+     * Consume a refresh token and return its user; the caller issues the new pair.
+     * Reusing a revoked token revokes every token of that user on that device.
      */
-    public function rotate(string $plain, string $deviceId): array
+    public function consume(string $plain, string $deviceId): User
     {
         $user = DB::transaction(function () use ($plain, $deviceId) {
             $token = RefreshToken::query()
@@ -81,7 +79,7 @@ class RefreshTokens
             throw new ApiException(401, 'invalid_refresh_token', 'The refresh token is invalid.');
         }
 
-        return $this->issuePair($user, $deviceId);
+        return $user;
     }
 
     public function revokeDevice(User $user, string $deviceId): void

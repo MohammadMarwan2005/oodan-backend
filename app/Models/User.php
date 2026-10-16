@@ -46,6 +46,38 @@ class User extends Authenticatable
     }
 
     /**
+     * @return HasMany<Device, $this>
+     */
+    public function devices(): HasMany
+    {
+        return $this->hasMany(Device::class);
+    }
+
+    /**
+     * @return HasMany<Shot, $this>
+     */
+    public function shots(): HasMany
+    {
+        return $this->hasMany(Shot::class);
+    }
+
+    /**
+     * @return HasMany<Category, $this>
+     */
+    public function categories(): HasMany
+    {
+        return $this->hasMany(Category::class);
+    }
+
+    /**
+     * @return HasMany<UserSetting, $this>
+     */
+    public function settings(): HasMany
+    {
+        return $this->hasMany(UserSetting::class);
+    }
+
+    /**
      * @return HasMany<AuthCode, $this>
      */
     public function authCodes(): HasMany

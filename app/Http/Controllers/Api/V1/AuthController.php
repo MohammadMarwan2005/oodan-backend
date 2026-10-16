@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Auth\AuthCodes;
 use App\Services\Auth\GoogleIdTokenVerifier;
 use App\Services\Auth\RefreshTokens;
+use App\Services\Devices;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -18,7 +19,7 @@ use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
-    public function __construct(private RefreshTokens $refreshTokens) {}
+    public function __construct(private RefreshTokens $refreshTokens, private Devices $devices) {}
 
     public function register(Request $request, AuthCodes $codes): JsonResponse
     {
@@ -96,7 +97,12 @@ class AuthController extends Controller
     {
         $data = $request->validate(['refresh_token' => ['required', 'string']]);
 
-        return response()->json($this->refreshTokens->rotate($data['refresh_token'], $request->attributes->get('device_id')));
+        $deviceId = $request->attributes->get('device_id');
+        $user = $this->refreshTokens->consume($data['refresh_token'], $deviceId);
+
+        $this->devices->touch($user, $request);
+
+        return response()->json($this->refreshTokens->issuePair($user, $deviceId));
     }
 
     public function logout(Request $request): Response
@@ -108,6 +114,8 @@ class AuthController extends Controller
 
     private function session(Request $request, User $user, int $status = 200): JsonResponse
     {
+        $this->devices->touch($user, $request);
+
         return response()->json([
             'tokens' => $this->refreshTokens->issuePair($user, $request->attributes->get('device_id')),
             'user' => new UserResource($user),

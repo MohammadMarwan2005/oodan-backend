@@ -44,8 +44,9 @@ with. Change any of them and I'll adjust.
 ## Auth (phase 2)
 
 13. **JWT library:** `firebase/php-jwt` v7 with a small custom guard (`Auth::viaRequest('jwt')`,
-    guard name `api`). I didn't use `php-open-source-saver/jwt-auth`: I couldn't confirm Laravel 13
-    support offline, and the plan names this fallback. The same library verifies Google tokens.
+    guard name `api`). I took the plan's fallback without evaluating
+    `php-open-source-saver/jwt-auth`'s Laravel 13 support. The guard is ~20 lines, and the same
+    library also verifies Google tokens, so one dependency covers both.
 14. **`JWT_SECRET`** must be set on the server (`openssl rand -base64 64`). The app throws if it is
     missing. It is *not* derived from `APP_KEY`.
 15. **Queue worker for mail?** The plan says to ask. *Default:* the code mail is a queued mailable
@@ -61,3 +62,23 @@ with. Change any of them and I'll adjust.
     assumed yet.
 19. **Users table:** I added a new migration (password nullable, `google_sub`, `sync_seq`,
     `is_admin`) instead of editing the initial one, in case it has already run on the server.
+
+## Sync (phase 3)
+
+20. **Processing order inside a push:** categories → shots → settings (→ backups), so a shot can
+    reference a category created in the same push. Seq numbers follow that order.
+21. **Shot validation applies to the whole item, even on an existing shot.** An existing shot whose
+    pushed copy has out-of-range immutable fields is rejected, not silently accepted.
+    `shot_in_future` is checked only on insert (`shot_at` is immutable).
+22. **A category check failing on a newer meta update rejects the whole shot item**, including its
+    state change in the same item. One item is applied all or nothing.
+23. **Setting values are type-strict:** `dot_size`/`intensity` must be JSON integers (not `"14"`
+    or `14.0`), `sound_enabled` a JSON boolean (not `1`).
+24. **Ids are lowercased** on the way in. Ids are global primary keys, so an id that already
+    belongs to another account is rejected as `id_conflict`.
+25. **Devices** are upserted on login, refresh, push and pull (not on `/me` etc.). `last_seen_at`
+    is what the admin "active users" stats read. A device id that signs in to another account
+    is moved to that account. There is no `X-Device-Name` header yet, so `devices.name` stays null.
+26. **Extra indexes:** `shots (user_id, shot_at)` and `shots.created_at` for the admin stats;
+    `devices.last_seen_at`. Shots have `timestamps(3)`; categories have no server timestamps, as
+    in the plan.

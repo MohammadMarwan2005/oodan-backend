@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\EmailVerificationController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\PasswordResetController;
+use App\Http\Controllers\Api\V1\SyncController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -39,4 +40,9 @@ Route::middleware('auth:api')->group(function () {
     Route::get('me', [MeController::class, 'show']);
     Route::patch('me', [MeController::class, 'update']);
     Route::delete('me', [MeController::class, 'destroy']);
+});
+
+Route::middleware(['auth:api', 'verified.api', 'throttle:sync', 'device'])->group(function () {
+    Route::post('sync/push', [SyncController::class, 'push']);
+    Route::get('sync/pull', [SyncController::class, 'pull']);
 });
