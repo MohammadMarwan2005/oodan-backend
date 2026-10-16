@@ -40,3 +40,24 @@ with. Change any of them and I'll adjust.
     treat it as an expired session).
 11. **`/auth/email/send-code` when already verified** → `204`, nothing sent.
 12. **Password rules:** min 8, max 255 characters, no other complexity rules.
+
+## Auth (phase 2)
+
+13. **JWT library:** `firebase/php-jwt` v7 with a small custom guard (`Auth::viaRequest('jwt')`,
+    guard name `api`). I didn't use `php-open-source-saver/jwt-auth`: I couldn't confirm Laravel 13
+    support offline, and the plan names this fallback. The same library verifies Google tokens.
+14. **`JWT_SECRET`** must be set on the server (`openssl rand -base64 64`). The app throws if it is
+    missing. It is *not* derived from `APP_KEY`.
+15. **Queue worker for mail?** The plan says to ask. *Default:* the code mail is a queued mailable
+    on `MAIL_QUEUE_CONNECTION`, which defaults to `sync` (sent during the request, no worker
+    needed). Set it to `database` once a worker runs.
+16. **Password reset also marks the email verified**, because the code proves the user owns the
+    mailbox. A Google-only account can use reset to add a password.
+17. **Rate limits:** register/login/google/forgot/reset/send-code/verify share one limiter,
+    5/min per IP+email (email of the signed-in user for the code endpoints). `/auth/refresh` gets
+    30/min per IP, which the plan doesn't specify.
+18. **Old refresh tokens and used codes are never pruned.** Rows stay for reuse detection. A
+    scheduled prune (e.g. tokens expired > 60 days) can come with deploy; no scheduler is
+    assumed yet.
+19. **Users table:** I added a new migration (password nullable, `google_sub`, `sync_seq`,
+    `is_admin`) instead of editing the initial one, in case it has already run on the server.

@@ -34,6 +34,24 @@ class UserFactory extends Factory
     }
 
     /**
+     * A Google-only account (no password).
+     */
+    public function google(?string $sub = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'password' => null,
+            'google_sub' => $sub ?? (string) fake()->unique()->numerify('1##################'),
+        ]);
+    }
+
+    public function admin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_admin' => true,
+        ]);
+    }
+
+    /**
      * Indicate that the model's email address should be unverified.
      */
     public function unverified(): static

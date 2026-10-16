@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'google' => [
+        // OAuth client ids allowed as the ID token audience (Android, later iOS and web).
+        'client_ids' => array_values(array_filter(array_map('trim', explode(',', (string) env('GOOGLE_CLIENT_IDS', ''))))),
+        'jwks_url' => 'https://www.googleapis.com/oauth2/v3/certs',
+    ],
+
 ];

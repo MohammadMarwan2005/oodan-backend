@@ -115,4 +115,17 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Queue Connection For Auth Mail
+    |--------------------------------------------------------------------------
+    |
+    | Verification and password reset codes are queued mailables. Keep this on
+    | "sync" (send during the request) until a queue worker runs on the server,
+    | then switch it to e.g. "database".
+    |
+    */
+
+    'queue_connection' => env('MAIL_QUEUE_CONNECTION', 'sync'),
+
 ];

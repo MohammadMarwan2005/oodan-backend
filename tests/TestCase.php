@@ -16,6 +16,17 @@ abstract class TestCase extends BaseTestCase
     protected bool $validateContract = true;
 
     /**
+     * The JWT guard caches its user, and the application is shared between the requests of a
+     * test, so forget it to make every request authenticate from its own headers.
+     */
+    public function call($method, $uri, $parameters = [], $cookies = [], $files = [], $server = [], $content = null)
+    {
+        $this->app['auth']->guard('api')->forgetUser();
+
+        return parent::call($method, $uri, $parameters, $cookies, $files, $server, $content);
+    }
+
+    /**
      * Every API response produced in a test must match openapi.yaml.
      *
      * @param  Response  $response
