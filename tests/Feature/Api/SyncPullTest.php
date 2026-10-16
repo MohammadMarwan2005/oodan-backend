@@ -82,6 +82,22 @@ class SyncPullTest extends TestCase
     }
 
     #[Test]
+    public function rows_above_the_committed_sync_seq_are_left_for_the_next_pull(): void
+    {
+        $user = User::factory()->create();
+        $shot = $this->shotItem();
+        $this->postJson('/api/v1/sync/push', ['shots' => [$shot, $this->shotItem()]], $this->authHeaders($user));
+
+        // Simulates a push that wrote a row but has not committed its sync_seq yet.
+        User::whereKey($user->id)->update(['sync_seq' => 1]);
+
+        $this->getJson('/api/v1/sync/pull', $this->authHeaders($user))
+            ->assertJsonCount(1, 'shots')
+            ->assertJsonPath('next_since', 1)
+            ->assertJsonPath('has_more', false);
+    }
+
+    #[Test]
     public function it_validates_the_query(): void
     {
         $headers = $this->authHeaders(User::factory()->create());

@@ -41,12 +41,18 @@ class SyncPull
      */
     public function handle(User $user, int $since, int $limit): array
     {
+        // The entity queries run separately, so a push could commit between them. Capping at the
+        // committed sync_seq read first keeps the page consistent: every row up to the cap is
+        // already committed, and rows a later push changes get a seq above it.
+        $cap = (int) User::whereKey($user->id)->value('sync_seq');
+
         // Fetch limit + 1 per entity: if the merged rows exceed the limit, there is more to pull.
         $rows = collect(self::MODELS)
             ->flatMap(fn (string $model, string $key) => $model::query()
                 ->select(self::COLUMNS[$key] ?? ['*'])
                 ->where('user_id', $user->id)
                 ->where('seq', '>', $since)
+                ->where('seq', '<=', $cap)
                 ->orderBy('seq')
                 ->limit($limit + 1)
                 ->get()
